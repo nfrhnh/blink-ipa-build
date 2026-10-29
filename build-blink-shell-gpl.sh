@@ -980,10 +980,20 @@ run_xcodebuild() {
     mkdir -p "$(dirname "$BUILD_LOG")"
     echo "Build log: $BUILD_LOG"
 
+    local status=0
     if command -v xcpretty &> /dev/null; then
-        "$@" 2>&1 | tee "$BUILD_LOG" | xcpretty
+        set -o pipefail
+        "$@" 2>&1 | tee "$BUILD_LOG" | xcpretty || status=$?
+        set +o pipefail
     else
-        "$@" 2>&1 | tee "$BUILD_LOG"
+        set -o pipefail
+        "$@" 2>&1 | tee "$BUILD_LOG" || status=$?
+        set +o pipefail
+    fi
+
+    if [ "$status" -ne 0 ]; then
+        echo "Error: xcodebuild failed with exit code $status (see $BUILD_LOG)"
+        exit "$status"
     fi
 }
 
