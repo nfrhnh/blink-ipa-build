@@ -1,0 +1,35 @@
+diff --git a/Blink/AppDelegate.m b/Blink/AppDelegate.m
+index 1f08b0b..e8e43fa 100644
+--- a/Blink/AppDelegate.m
++++ b/Blink/AppDelegate.m
+@@ -134,3 +134,2 @@ void __setupProcessEnv(void) {
+   
+-  [PurchasesUserModelObjc preparePurchasesUserModel];
+   
+diff --git a/Blink/WhatsNew/Models.swift b/Blink/WhatsNew/Models.swift
+index f131e44..2b13b5e 100644
+--- a/Blink/WhatsNew/Models.swift
++++ b/Blink/WhatsNew/Models.swift
+@@ -89,3 +89,2 @@ extension URL {
+     components.queryItems = [
+-      URLQueryItem(name: "pid", value: Purchases.shared.appUserID),
+       URLQueryItem(name: "customer_tier", value: tier())
+diff --git a/Settings/ViewControllers/GetInTouch/SupportView.swift b/Settings/ViewControllers/GetInTouch/SupportView.swift
+index 93e30f4..ee08c33 100644
+--- a/Settings/ViewControllers/GetInTouch/SupportView.swift
++++ b/Settings/ViewControllers/GetInTouch/SupportView.swift
+@@ -33,3 +33,2 @@
+ import SwiftUI
+-import RevenueCat
+ 
+@@ -105,9 +104,3 @@ struct SupportView: View {
+ 
+-      Section(header: Text("Internals")) {
+-        Button {
+-          UIPasteboard.general.string = Purchases.shared.appUserID
+-        } label: {
+-          Label("Copy User ID", systemImage: "doc.on.clipboard")
+-        }
+-      }
++
+     }

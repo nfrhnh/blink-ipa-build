@@ -7,7 +7,7 @@ import plistlib
 import re
 import shutil
 from pathlib import Path
-from zipfile import ZipFile
+from zipfile import BadZipFile, LargeZipFile, ZipFile
 
 
 def prepare(source: Path, destination: Path, team_id: str) -> None:
@@ -31,6 +31,10 @@ def prepare(source: Path, destination: Path, team_id: str) -> None:
         bundle_id = app.get("CFBundleIdentifier")
         if not isinstance(bundle_id, str) or not re.fullmatch(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", bundle_id):
             raise ValueError("Invalid main bundle identifier")
+        for name in (provider_plist, ui_plist):
+            identifier = plistlib.loads(archive.read(name)).get("CFBundleIdentifier")
+            if not isinstance(identifier, str) or not identifier.startswith(bundle_id + "."):
+                raise ValueError(f"Extension identifier is not a child of the app: {name}")
         extension = provider.get("NSExtension", {})
         if extension.get("NSExtensionPointIdentifier") != "com.apple.fileprovider-nonui":
             raise ValueError("Unexpected File Provider extension")
@@ -60,9 +64,11 @@ def prepare(source: Path, destination: Path, team_id: str) -> None:
         if result.testzip() is not None:
             destination.unlink(missing_ok=True)
             raise ValueError("Output IPA failed its ZIP integrity check")
+    digest = hashlib.sha256()
     with destination.open("rb") as output:
-        digest = hashlib.file_digest(output, "sha256").hexdigest()
-    print(f"Prepared {destination}\nSHA-256: {digest}")
+        for chunk in iter(lambda: output.read(1024 * 1024), b""):
+            digest.update(chunk)
+    print(f"Prepared {destination}\nSHA-256: {digest.hexdigest()}")
     print("Install this IPA using iLoader with the same Apple account.")
 
 
@@ -74,7 +80,7 @@ def main() -> None:
     args = parser.parse_args()
     try:
         prepare(args.source, args.destination, args.team_id)
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, BadZipFile, LargeZipFile) as error:
         parser.exit(1, f"Error: {error}\n")
 
 

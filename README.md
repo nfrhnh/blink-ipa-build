@@ -16,14 +16,15 @@ Nothing here is distributed as a binary commit.
 Select `extensions=keep` and `shim=none` in Actions. The build keeps the File
 Provider extensions and resolves the shared group using the installed app's
 bundle identifier. It removes the subscription and hosted Build entries from
-Settings and the hosted Build page from the walkthrough. The existing
-subscription gate patch is retained; the purchase SDK and other upstream
-subscription code are still present. This is not a complete removal of those
-dependencies.
+Settings and the hosted Build page from the walkthrough. It bypasses the
+subscription gate and removes the purchase service's startup call. The purchase
+SDK, hosted service implementation, and other upstream subscription code remain
+in the project; this is not a complete removal of those dependencies. Runtime
+network behavior has not yet been independently verified.
 
 This mode is experimental and has not been tested on a device. It targets
 iLoader 2.4.1's group naming and extension-signing behavior. Before installing,
-use Python 3.11 or newer to prepare the unsigned IPA locally:
+use Python 3.9 or newer to prepare the unsigned IPA locally:
 
 ```sh
 python3 prepare_iloader.py Blink-unsigned-v18.4.2.ipa Blink-iloader.ipa TEAMID1234

@@ -558,6 +558,8 @@ data, did_change = replace_func(
     ],
 )
 changed = changed or did_change
+if not did_change:
+    sys.exit("Error: currentPlanName was not found in EntitlementsManager.swift")
 
 data, did_change = replace_func(
     "customerTier",
@@ -567,6 +569,8 @@ data, did_change = replace_func(
     ],
 )
 changed = changed or did_change
+if not did_change:
+    sys.exit("Error: customerTier was not found in EntitlementsManager.swift")
 
 data, did_change = replace_func(
     "hasActiveSubscriptions",
@@ -576,6 +580,8 @@ data, did_change = replace_func(
     ],
 )
 changed = changed or did_change
+if not did_change:
+    sys.exit("Error: hasActiveSubscriptions was not found in EntitlementsManager.swift")
 
 if changed:
     with open(path, "w", encoding="utf-8") as fh:
@@ -584,7 +590,8 @@ PY
 
         echo "  Paywall removed (function body replacement)"
     else
-        echo "  Warning: EntitlementsManager.swift not found"
+        echo "Error: EntitlementsManager.swift not found" >&2
+        exit 1
     fi
 }
 
@@ -1403,6 +1410,15 @@ elif git -C "$SOURCE_DIR" apply --reverse --check "$SETTINGS_PATCH"; then
     echo "Subscription settings patch already applied"
 else
     echo "Error: subscription settings patch does not match the Blink source" >&2
+    exit 1
+fi
+PURCHASE_PATCH="${SCRIPT_DIR}/patches/0003-stop-purchase-startup.patch"
+if git -C "$SOURCE_DIR" apply --check "$PURCHASE_PATCH"; then
+    git -C "$SOURCE_DIR" apply "$PURCHASE_PATCH"
+elif git -C "$SOURCE_DIR" apply --reverse --check "$PURCHASE_PATCH"; then
+    echo "Purchase startup patch already applied"
+else
+    echo "Error: purchase startup patch does not match the Blink source" >&2
     exit 1
 fi
 if [ "${BLINK_EXTENSIONS:-strip}" = keep ]; then

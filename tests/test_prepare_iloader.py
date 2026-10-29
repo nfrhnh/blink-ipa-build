@@ -18,11 +18,11 @@ class PrepareILoaderTests(unittest.TestCase):
             executable = "Payload/Blink.app/Blink"
             with zipfile.ZipFile(source, "w", zipfile.ZIP_DEFLATED) as archive:
                 archive.writestr(app, plistlib.dumps({"CFBundleIdentifier": "sh.blink.blinkshell"}))
-                archive.writestr(provider, plistlib.dumps({"NSExtension": {
+                archive.writestr(provider, plistlib.dumps({"CFBundleIdentifier": "sh.blink.blinkshell.provider", "NSExtension": {
                     "NSExtensionPointIdentifier": "com.apple.fileprovider-nonui",
                     "NSExtensionFileProviderDocumentGroup": "group.sh.blink",
                 }}))
-                archive.writestr(ui, plistlib.dumps({}))
+                archive.writestr(ui, plistlib.dumps({"CFBundleIdentifier": "sh.blink.blinkshell.providerui"}))
                 binary = zipfile.ZipInfo(executable)
                 binary.external_attr = 0o100755 << 16
                 archive.writestr(binary, b"test binary")
