@@ -43,6 +43,11 @@ set -e
 # HELP_END
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+case "${BLINK_SHIM:-source}" in
+    source|none) ;;
+    *) echo "Error: BLINK_SHIM must be 'source' or 'none' (got '${BLINK_SHIM}')"; exit 1 ;;
+esac
 VERSION="v18.4.2"
 SOURCE_DIR="${SCRIPT_DIR}/blink-src"
 BUILD_DIR="${SCRIPT_DIR}/build-output"
@@ -798,13 +803,28 @@ inject_sideload_fix() {
     mkdir -p "$FRAMEWORKS_DIR"
     cp "$DYLIB_PATH" "$FRAMEWORKS_DIR/"
 
-    # Inject load command
-    chmod +x "$INSERT_DYLIB"
-    "$INSERT_DYLIB" --strip-codesig --inplace \
-        "@executable_path/Frameworks/SideloadFix.dylib" \
-        "$APP_BUNDLE/$APP_NAME" 2>/dev/null || true
+    # Verify the dylib matches the app architecture before injecting
+    if ! lipo -archs "$DYLIB_PATH" | grep -qw arm64; then
+        echo "Error: SideloadFix.dylib has no arm64 slice"
+        exit 1
+    fi
 
-    echo "  Injected SideloadFix.dylib"
+    # Inject load command (failures must not be swallowed)
+    chmod +x "$INSERT_DYLIB"
+    if ! "$INSERT_DYLIB" --strip-codesig --inplace \
+        "@executable_path/Frameworks/SideloadFix.dylib" \
+        "$APP_BUNDLE/$APP_NAME"; then
+        echo "Error: insert_dylib failed"
+        exit 1
+    fi
+
+    # The load command must actually be present in the binary
+    if ! otool -L "$APP_BUNDLE/$APP_NAME" | grep -q "SideloadFix.dylib"; then
+        echo "Error: SideloadFix.dylib load command missing from $APP_NAME"
+        exit 1
+    fi
+
+    echo "  Injected and verified SideloadFix.dylib"
 }
 
 # Function to create sideload-friendly entitlements
@@ -938,6 +958,7 @@ setup_repository() {
 
     echo "Cloning Blink repository (version: $VERSION)..."
     git clone --recursive --branch "$VERSION" https://github.com/blinksh/blink.git "$SOURCE_DIR"
+    echo "Blink source commit: $(git -C "$SOURCE_DIR" rev-parse HEAD) (branch $VERSION)"
 
     cd "$SOURCE_DIR"
 
@@ -976,26 +997,17 @@ resolve_packages() {
 }
 
 # Function to run xcodebuild with optional xcpretty and logging
-run_xcodebuild() {
+run_xcodebuild() (
     mkdir -p "$(dirname "$BUILD_LOG")"
     echo "Build log: $BUILD_LOG"
 
-    local status=0
+    set -o pipefail
     if command -v xcpretty &> /dev/null; then
-        set -o pipefail
-        "$@" 2>&1 | tee "$BUILD_LOG" | xcpretty || status=$?
-        set +o pipefail
+        "$@" 2>&1 | tee "$BUILD_LOG" | xcpretty
     else
-        set -o pipefail
-        "$@" 2>&1 | tee "$BUILD_LOG" || status=$?
-        set +o pipefail
+        "$@" 2>&1 | tee "$BUILD_LOG"
     fi
-
-    if [ "$status" -ne 0 ]; then
-        echo "Error: xcodebuild failed with exit code $status (see $BUILD_LOG)"
-        exit "$status"
-    fi
-}
+)
 
 # Function to build
 build_app() {
@@ -1276,11 +1288,24 @@ EXPORT_EOF
             # Verify the archive really contains a usable app bundle
             if ! unzip -l "$IPA_PATH" | grep -q "Payload/Blink.app/Info.plist"; then
                 echo "Error: packaged IPA is missing Payload/Blink.app/Info.plist"
-                echo "First entries of the archive:"
                 unzip -l "$IPA_PATH" | head -20
                 exit 1
             fi
-            echo "  verified: Payload/Blink.app/Info.plist present"
+            if ! unzip -l "$IPA_PATH" | grep -q "Payload/Blink.app/Blink$"; then
+                echo "Error: packaged IPA is missing the Blink executable"
+                unzip -l "$IPA_PATH" | head -20
+                exit 1
+            fi
+            if ! plutil -lint "$PAYLOAD_DIR/Blink.app/Info.plist" > /dev/null; then
+                echo "Error: Info.plist in the app bundle is not a valid plist"
+                exit 1
+            fi
+            if ! lipo -archs "$PAYLOAD_DIR/Blink.app/Blink" | grep -qw arm64; then
+                echo "Error: Blink executable is not an arm64 iOS binary"
+                exit 1
+            fi
+            BUNDLE_ID=$(plutil -extract CFBundleIdentifier raw "$PAYLOAD_DIR/Blink.app/Info.plist" 2>/dev/null || echo "<none>")
+            echo "  verified: Info.plist, executable and arm64 slice present (CFBundleIdentifier=$BUNDLE_ID)"
 
             mkdir -p "$OUTPUT_DIR"
             if [ "$KEEP_BUILD" = true ]; then
