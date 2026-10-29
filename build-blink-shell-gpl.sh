@@ -804,7 +804,7 @@ inject_sideload_fix() {
     cp "$DYLIB_PATH" "$FRAMEWORKS_DIR/"
 
     # Verify the dylib matches the app architecture before injecting
-    if ! lipo -archs "$DYLIB_PATH" | grep -qw arm64; then
+    if ! lipo -archs "$FRAMEWORKS_DIR/SideloadFix.dylib" | grep -qw arm64; then
         echo "Error: SideloadFix.dylib has no arm64 slice"
         exit 1
     fi
@@ -819,7 +819,7 @@ inject_sideload_fix() {
     fi
 
     # The load command must actually be present in the binary
-    if ! otool -L "$APP_BUNDLE/$APP_NAME" | grep -q "SideloadFix.dylib"; then
+    if ! otool -L "$APP_BUNDLE/$APP_NAME" | grep -Fq '@executable_path/Frameworks/SideloadFix.dylib '; then
         echo "Error: SideloadFix.dylib load command missing from $APP_NAME"
         exit 1
     fi
@@ -1282,30 +1282,41 @@ EXPORT_EOF
             cd "$BUILD_DIR"
             rm -f "Blink-unsigned.ipa"
             zip -r -q "Blink-unsigned.ipa" Payload
-            rm -rf "$PAYLOAD_DIR"
             cd "$SCRIPT_DIR"
 
-            # Verify the archive really contains a usable app bundle
-            if ! unzip -l "$IPA_PATH" | grep -q "Payload/Blink.app/Info.plist"; then
-                echo "Error: packaged IPA is missing Payload/Blink.app/Info.plist"
-                unzip -l "$IPA_PATH" | head -20
+            # Validate the actual archived contents, including ZIP CRCs.
+            local VERIFY_DIR
+            VERIFY_DIR=$(mktemp -d "${BUILD_DIR}/ipa-verify.XXXXXX")
+            if ! unzip -tq "$IPA_PATH" || ! unzip -q "$IPA_PATH" -d "$VERIFY_DIR"; then
+                echo "Error: IPA archive is corrupt or cannot be extracted"
                 exit 1
             fi
-            if ! unzip -l "$IPA_PATH" | grep -q "Payload/Blink.app/Blink$"; then
-                echo "Error: packaged IPA is missing the Blink executable"
-                unzip -l "$IPA_PATH" | head -20
+            local VERIFY_APP="$VERIFY_DIR/Payload/Blink.app"
+            if [ ! -f "$VERIFY_APP/Info.plist" ] || [ ! -f "$VERIFY_APP/Blink" ]; then
+                echo "Error: packaged IPA is missing Info.plist or Blink executable"
                 exit 1
             fi
-            if ! plutil -lint "$PAYLOAD_DIR/Blink.app/Info.plist" > /dev/null; then
+            if ! plutil -lint "$VERIFY_APP/Info.plist" > /dev/null; then
                 echo "Error: Info.plist in the app bundle is not a valid plist"
                 exit 1
             fi
-            if ! lipo -archs "$PAYLOAD_DIR/Blink.app/Blink" | grep -qw arm64; then
+            if ! lipo -archs "$VERIFY_APP/Blink" | grep -qw arm64; then
                 echo "Error: Blink executable is not an arm64 iOS binary"
                 exit 1
             fi
-            BUNDLE_ID=$(plutil -extract CFBundleIdentifier raw "$PAYLOAD_DIR/Blink.app/Info.plist" 2>/dev/null || echo "<none>")
+            BUNDLE_ID=$(plutil -extract CFBundleIdentifier raw "$VERIFY_APP/Info.plist")
+            if [ -z "$BUNDLE_ID" ] || [ "$(plutil -extract CFBundleExecutable raw "$VERIFY_APP/Info.plist")" != Blink ]; then
+                echo "Error: IPA has an invalid bundle identifier or executable name"
+                exit 1
+            fi
+            if [ "${BLINK_SHIM:-source}" = source ]; then
+                if [ ! -f "$VERIFY_APP/Frameworks/SideloadFix.dylib" ] || ! otool -L "$VERIFY_APP/Blink" | grep -Fq '@executable_path/Frameworks/SideloadFix.dylib '; then
+                    echo "Error: packaged IPA is missing the SideloadFix dylib or load command"
+                    exit 1
+                fi
+            fi
             echo "  verified: Info.plist, executable and arm64 slice present (CFBundleIdentifier=$BUNDLE_ID)"
+            rm -rf "$VERIFY_DIR" "$PAYLOAD_DIR"
 
             mkdir -p "$OUTPUT_DIR"
             if [ "$KEEP_BUILD" = true ]; then
