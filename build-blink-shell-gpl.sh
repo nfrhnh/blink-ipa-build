@@ -756,17 +756,33 @@ inject_sideload_fix() {
     local APP_BUNDLE="$1"
     local APP_NAME=$(basename "$APP_BUNDLE" .app)
     local FRAMEWORKS_DIR="$APP_BUNDLE/Frameworks"
-    local DYLIB_URL="https://github.com/waruhachi/SideloadFix/releases/download/release/SideloadFix.dylib"
     local DYLIB_PATH="${SCRIPT_DIR}/.cache/SideloadFix.dylib"
     local INSERT_DYLIB="${SCRIPT_DIR}/.cache/insert_dylib"
 
     echo "Injecting SideloadFix.dylib..."
     mkdir -p "${SCRIPT_DIR}/.cache"
 
-    # Download SideloadFix.dylib if not cached
+    # Build SideloadFix.dylib from vendored source -- no prebuilt binary is used.
+    local SHIM_DIR="${SCRIPT_DIR}/shim"
+    if [ ! -d "$SHIM_DIR" ]; then
+        echo "Error: shim sources not found at $SHIM_DIR"
+        exit 1
+    fi
+    echo "  Compiling SideloadFix.dylib from source..."
+    local IOS_SDK
+    IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+    xcrun --sdk iphoneos clang -dynamiclib \
+        -target arm64-apple-ios15.0 \
+        -isysroot "$IOS_SDK" \
+        -fobjc-arc -fmodules \
+        -framework Foundation -framework Security \
+        -install_name @executable_path/Frameworks/SideloadFix.dylib \
+        -I "$SHIM_DIR" \
+        -o "$DYLIB_PATH" \
+        "$SHIM_DIR/SideloadFix.m" "$SHIM_DIR/fishhook.c"
     if [ ! -f "$DYLIB_PATH" ]; then
-        echo "  Downloading SideloadFix.dylib..."
-        curl -sL "$DYLIB_URL" -o "$DYLIB_PATH"
+        echo "Error: failed to build SideloadFix.dylib from source"
+        exit 1
     fi
 
     # Build insert_dylib if not cached
