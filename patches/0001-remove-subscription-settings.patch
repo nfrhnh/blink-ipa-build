@@ -1,0 +1,127 @@
+diff --git a/Blink/Subscriptions/Walkthrough.swift b/Blink/Subscriptions/Walkthrough.swift
+index e1806fd..71abfa5 100644
+--- a/Blink/Subscriptions/Walkthrough.swift
++++ b/Blink/Subscriptions/Walkthrough.swift
+@@ -221,13 +221,9 @@ struct WalkthroughView: View {
+     PageInfo.multipleTerminalsInfo,
+     PageInfo.hostsKeysEverywhereInfo,
+     PageInfo.sshMoshToolsInfo,
+-    PageInfo.blinkCodeInfo,
+-    PageInfo.blinkBuildInfo
++    PageInfo.blinkCodeInfo
+   ]
+ 
+-  @StateObject var _purchases = PurchasesUserModel.shared
+-  @StateObject var _entitlements = EntitlementsManager.shared
+-
+   @State var pageIndex = 0
+ 
+   init(ctx: PageCtx, urlHandler: @escaping (URL) -> Void, dismissHandler: @escaping () -> Void) {
+diff --git a/Settings/SettingsView.swift b/Settings/SettingsView.swift
+index 29d2f9a..2a399dd 100644
+--- a/Settings/SettingsView.swift
++++ b/Settings/SettingsView.swift
+@@ -43,56 +43,9 @@ struct SettingsView: View {
+   @State private var _autoLockOn = BKUserConfigurationManager.userSettingsValue(forKey: BKUserConfigAutoLock)
+   @State private var _xCallbackUrlOn = BLKDefaults.isXCallBackURLEnabled()
+   @State private var _defaultUser = BLKDefaults.defaultUserName() ?? ""
+-  @StateObject private var _entitlements: EntitlementsManager = .shared
+-  @StateObject private var _model = PurchasesUserModel.shared
+-  @State private var _displayBlinkClassicToPlus = false
+ 
+   var body: some View {
+     List {
+-      if _entitlements.earlyAccessFeatures.active && _entitlements.earlyAccessFeatures.period == .Trial {
+-        Section {
+-          Row {
+-            Label(title: {
+-                    VStack(alignment: .leading, spacing: 1) {
+-                      Text("Need extra help?")
+-                      Text("Don't be shy. We want Blink to work for you. Ask us questions during your trial.").foregroundColor(.secondary).font(.subheadline)
+-                    }
+-                  }, icon: { Image(systemName: "questionmark.bubble") })
+-          } details: {
+-            TrialSupportView()
+-          }
+-        } header: {
+-          Text("Trial support")
+-        }
+-      }
+-
+-      Section("Subscription") {
+-        HStack {
+-          Label(_entitlements.currentPlanName(), systemImage: "bag")
+-          Spacer()
+-          if !(_entitlements.earlyAccessFeatures.active || FeatureFlags.earlyAccessFeatures) {
+-            Button("Get Blink+") { _displayBlinkClassicToPlus = true }
+-          }
+-        }
+-        if _entitlements.earlyAccessFeatures.active {
+-          Row {
+-            HStack {
+-              Label("Build Beta", systemImage: "hammer.circle")
+-              Spacer()
+-              if _entitlements.earlyAccessFeatures.period == .Trial {
+-                Text("Needs Blink+")
+-              } else {
+-                Text("") // TODO: show status?
+-                  .foregroundColor(.secondary)
+-              }
+-            }
+-          } details: {
+-              BuildView().onAppear(perform: {
+-                BuildAccountModel.shared.checkBuildToken(animated: false)
+-              })
+-          }.disabled(_entitlements.earlyAccessFeatures.period != .Normal)
+-        }
+-      }
+       Section("Connect") {
+         Row {
+           Label("Keys & Certificates", systemImage: "key")
+@@ -214,14 +167,14 @@ struct SettingsView: View {
+         }, storyBoardId: "BKAboutViewController")
+         HStack {
+           Button {
+-            _model.openPrivacyAndPolicy()
++            blink_openurl(URL(string: "https://blink.sh/pp")!)
+           } label: {
+             Label("Privacy Policy", systemImage: "link")
+           }
+         }
+         HStack {
+           Button {
+-            _model.openTermsOfUse()
++            blink_openurl(URL(string: "https://blink.sh/blink-gpl")!)
+           } label: {
+             Label("Terms of Use", systemImage: "link")
+           }
+@@ -237,29 +190,7 @@ struct SettingsView: View {
+     }
+     .listStyle(.grouped)
+     .navigationTitle("Settings")
+-    .sheet(isPresented: $_displayBlinkClassicToPlus) {
+-      BlinkClassicToPlusWindow(urlHandler: blink_openurl, dismissHandler: { _displayBlinkClassicToPlus = false })
+-    }
+ 
+   }
+ }
+ 
+-fileprivate struct BlinkClassicToPlusWindow: View {
+-  let urlHandler: (URL) -> ()
+-  let dismissHandler: () -> ()
+-
+-  @Environment(\.dynamicTypeSize) var dynamicTypeSize
+-
+-  var body: some View {
+-    GeometryReader { proxy in
+-      let ctx = PageCtx(
+-        proxy: proxy,
+-        dynamicTypeSize: dynamicTypeSize
+-      )
+-
+-      NewOfferingsView(classicOffering: true, ctx: ctx, purchaseCompletedHandler: dismissHandler, urlHandler: urlHandler, dismissHandler: dismissHandler)
+-        .frame(width: proxy.size.width, height: proxy.size.height)
+-    }
+-    .background(.black)
+-  }
+-}

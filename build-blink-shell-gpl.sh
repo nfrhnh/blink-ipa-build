@@ -48,6 +48,14 @@ case "${BLINK_SHIM:-source}" in
     source|none) ;;
     *) echo "Error: BLINK_SHIM must be 'source' or 'none' (got '${BLINK_SHIM}')"; exit 1 ;;
 esac
+case "${BLINK_EXTENSIONS:-strip}" in
+    strip|keep) ;;
+    *) echo "Error: BLINK_EXTENSIONS must be 'strip' or 'keep'" >&2; exit 1 ;;
+esac
+if [ "${BLINK_EXTENSIONS:-strip}" = keep ] && [ "${BLINK_SHIM:-source}" != none ]; then
+    echo "Error: the shim replaces App Groups with private directories; use BLINK_SHIM=none with extensions" >&2
+    exit 1
+fi
 VERSION="v18.4.2"
 SOURCE_DIR="${SCRIPT_DIR}/blink-src"
 BUILD_DIR="${SCRIPT_DIR}/build-output"
@@ -863,6 +871,10 @@ ENTITLEMENTS_EOF
 
 # Patch Blink so the shell home does not depend on the App Group entitlement.
 patch_app_group_container() {
+    if [ "${BLINK_EXTENSIONS:-strip}" = keep ]; then
+        echo "Using the real App Group for the File Provider"
+        return
+    fi
     local PATHS_FILE="${SOURCE_DIR}/BlinkConfig/BlinkPaths.m"
 
     if [ ! -f "$PATHS_FILE" ]; then
@@ -1267,9 +1279,18 @@ EXPORT_EOF
             mkdir -p "$PAYLOAD_DIR"
             cp -r "$APP_PATH" "$PAYLOAD_DIR/"
 
-            # Remove app extensions that require entitlements incompatible with sideloading
-            echo "Removing incompatible app extensions..."
-            rm -rf "$PAYLOAD_DIR/Blink.app/PlugIns"
+            if [ "${BLINK_EXTENSIONS:-strip}" = strip ]; then
+                echo "Removing app extensions for the standalone build..."
+                rm -rf "$PAYLOAD_DIR/Blink.app/PlugIns"
+            else
+                for extension in BlinkFileProviderExtension BlinkFileProviderExtensionUI; do
+                    if [ ! -f "$PAYLOAD_DIR/Blink.app/PlugIns/${extension}.appex/Info.plist" ]; then
+                        echo "Error: missing $extension in the build output" >&2
+                        exit 1
+                    fi
+                done
+                echo "Keeping File Provider extensions for the experimental iLoader build"
+            fi
 
             # Inject SideloadFix.dylib unless the source patch already covers it
             if [ "${BLINK_SHIM:-source}" = "none" ]; then
@@ -1315,6 +1336,21 @@ EXPORT_EOF
                     exit 1
                 fi
             fi
+            if [ "${BLINK_EXTENSIONS:-strip}" = keep ]; then
+                for extension in BlinkFileProviderExtension BlinkFileProviderExtensionUI; do
+                    local EXTENSION_DIR="$VERIFY_APP/PlugIns/${extension}.appex"
+                    if [ ! -f "$EXTENSION_DIR/Info.plist" ] || ! plutil -lint "$EXTENSION_DIR/Info.plist" >/dev/null; then
+                        echo "Error: packaged extension $extension has no valid Info.plist" >&2
+                        exit 1
+                    fi
+                    local EXTENSION_EXECUTABLE
+                    EXTENSION_EXECUTABLE=$(plutil -extract CFBundleExecutable raw "$EXTENSION_DIR/Info.plist")
+                    if [ -z "$EXTENSION_EXECUTABLE" ] || [ ! -f "$EXTENSION_DIR/$EXTENSION_EXECUTABLE" ] || ! lipo -archs "$EXTENSION_DIR/$EXTENSION_EXECUTABLE" | grep -qw arm64; then
+                        echo "Error: packaged extension $extension has no arm64 executable" >&2
+                        exit 1
+                    fi
+                done
+            fi
             echo "  verified: Info.plist, executable and arm64 slice present (CFBundleIdentifier=$BUNDLE_ID)"
             rm -rf "$VERIFY_DIR" "$PAYLOAD_DIR"
 
@@ -1348,6 +1384,38 @@ if [ "$DO_LIST_SIMULATORS" = true ]; then
 fi
 
 setup_repository
+
+if [ "${BLINK_EXTENSIONS:-strip}" = keep ]; then
+    REVIEWED_BLINK_COMMIT=99660bf1b9f9c8b5580720b7b22a94c4daec4cb7
+    if [ "$(git -C "$SOURCE_DIR" rev-parse HEAD)" != "$REVIEWED_BLINK_COMMIT" ]; then
+        echo "Error: experimental iLoader build requires reviewed Blink commit $REVIEWED_BLINK_COMMIT" >&2
+        exit 1
+    fi
+fi
+
+# Keep the self-built edition's settings focused on the terminal rather than
+# offering App Store subscriptions and the hosted Build service. Apply a
+# reviewed source patch and fail if upstream changes make it inapplicable.
+SETTINGS_PATCH="${SCRIPT_DIR}/patches/0001-remove-subscription-settings.patch"
+if git -C "$SOURCE_DIR" apply --check "$SETTINGS_PATCH"; then
+    git -C "$SOURCE_DIR" apply "$SETTINGS_PATCH"
+elif git -C "$SOURCE_DIR" apply --reverse --check "$SETTINGS_PATCH"; then
+    echo "Subscription settings patch already applied"
+else
+    echo "Error: subscription settings patch does not match the Blink source" >&2
+    exit 1
+fi
+if [ "${BLINK_EXTENSIONS:-strip}" = keep ]; then
+    GROUP_PATCH="${SCRIPT_DIR}/patches/0002-iloader-shared-group.patch"
+    if git -C "$SOURCE_DIR" apply --check "$GROUP_PATCH"; then
+        git -C "$SOURCE_DIR" apply "$GROUP_PATCH"
+    elif git -C "$SOURCE_DIR" apply --reverse --check "$GROUP_PATCH"; then
+        echo "iLoader App Group patch already applied"
+    else
+        echo "Error: iLoader App Group patch does not match the Blink source" >&2
+        exit 1
+    fi
+fi
 
 if [ "$SETUP_ONLY" = true ]; then
     echo ""

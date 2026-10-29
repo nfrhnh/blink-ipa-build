@@ -11,6 +11,10 @@ on:
         description: "source = compile+inject SideloadFix.dylib, none = source patch only"
         required: true
         default: "source"
+      extensions:
+        description: "strip = standalone, keep = experimental iLoader File Provider build (use shim=none)"
+        required: true
+        default: "strip"
 
 permissions:
   contents: read
@@ -41,6 +45,7 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           TEAM_ID: ""
           BLINK_SHIM: ${{ inputs.shim }}
+          BLINK_EXTENSIONS: ${{ inputs.extensions }}
           BLINK_VERSION: ${{ inputs.version }}
         run: |
           if [[ ! "$BLINK_VERSION" =~ ^v[0-9]+(\.[0-9]+)+$ ]]; then
@@ -59,7 +64,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: blink-unsigned-ipa-${{ inputs.shim }}
+          name: blink-unsigned-ipa-${{ inputs.shim }}-${{ inputs.extensions }}
           path: dist/*.ipa
           retention-days: 14
 

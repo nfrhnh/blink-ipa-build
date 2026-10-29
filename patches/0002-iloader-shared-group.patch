@@ -1,0 +1,23 @@
+diff --git a/BlinkConfig/XCConfig.m b/BlinkConfig/XCConfig.m
+index 433b47e..7e2eb81 100644
+--- a/BlinkConfig/XCConfig.m
++++ b/BlinkConfig/XCConfig.m
+@@ -68,7 +68,17 @@
+ }
+ 
+ + (NSString *) infoPlistFullGroupID {
+-  return [NSString stringWithFormat:@"group.%@", [self infoPlistGroupID]];
++  // iLoader registers a group named after the re-signed containing app.
++  // The File Provider runs in a separate process, so find the containing app
++  // when the main bundle is an extension.
++  NSBundle *appBundle = [NSBundle mainBundle];
++  if ([appBundle.bundleURL.pathExtension isEqualToString:@"appex"]) {
++    NSURL *appURL = [[appBundle.bundleURL URLByDeletingLastPathComponent] URLByDeletingLastPathComponent];
++    appBundle = [NSBundle bundleWithURL:appURL];
++  }
++  NSString *bundleID = appBundle.bundleIdentifier;
++  return bundleID ? [@"group." stringByAppendingString:bundleID]
++                  : [NSString stringWithFormat:@"group.%@", [self infoPlistGroupID]];
+ }
+ 
+ 
