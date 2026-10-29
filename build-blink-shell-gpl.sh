@@ -1225,6 +1225,20 @@ EXPORT_EOF
         OUTPUT_IPA_PATH="${OUTPUT_DIR}/Blink-unsigned-${VERSION}.ipa"
 
         if [ -d "$APP_PATH" ]; then
+            # The bundle must carry its Info.plist or the resulting .ipa is invalid
+            # for every signing tool (isideload rejects it outright).
+            if [ ! -f "$APP_PATH/Info.plist" ]; then
+                echo "Warning: Info.plist missing from $APP_PATH"
+                FOUND_PLIST=$(find "${BUILD_DIR}/DerivedData" -path "*Release-iphoneos/Blink.app/Info.plist" -print -quit 2>/dev/null)
+                if [ -n "$FOUND_PLIST" ]; then
+                    cp "$FOUND_PLIST" "$APP_PATH/Info.plist"
+                    echo "  restored Info.plist from $FOUND_PLIST"
+                else
+                    echo "Error: no Info.plist found anywhere for Blink.app"
+                    exit 1
+                fi
+            fi
+
             # Create Payload directory structure
             PAYLOAD_DIR="${BUILD_DIR}/Payload"
             rm -rf "$PAYLOAD_DIR"
@@ -1248,6 +1262,15 @@ EXPORT_EOF
             zip -r -q "Blink-unsigned.ipa" Payload
             rm -rf "$PAYLOAD_DIR"
             cd "$SCRIPT_DIR"
+
+            # Verify the archive really contains a usable app bundle
+            if ! unzip -l "$IPA_PATH" | grep -q "Payload/Blink.app/Info.plist"; then
+                echo "Error: packaged IPA is missing Payload/Blink.app/Info.plist"
+                echo "First entries of the archive:"
+                unzip -l "$IPA_PATH" | head -20
+                exit 1
+            fi
+            echo "  verified: Payload/Blink.app/Info.plist present"
 
             mkdir -p "$OUTPUT_DIR"
             if [ "$KEEP_BUILD" = true ]; then
