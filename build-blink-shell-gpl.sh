@@ -841,6 +841,48 @@ ENTITLEMENTS_EOF
     echo "  Created Blink-sideload.entitlements"
 }
 
+# Patch Blink so the shell home does not depend on the App Group entitlement.
+patch_app_group_container() {
+    local PATHS_FILE="${SOURCE_DIR}/BlinkConfig/BlinkPaths.m"
+
+    if [ ! -f "$PATHS_FILE" ]; then
+        echo "Error: BlinkPaths.m not found at $PATHS_FILE"
+        exit 1
+    fi
+
+    echo "Patching: App Group container fallback (BlinkPaths.m)..."
+    python3 - "$PATHS_FILE" << 'PY_PATHS'
+import sys
+
+path = sys.argv[1]
+src = open(path, encoding="utf-8").read()
+
+needle = """    NSString *path = [fm containerURLForSecurityApplicationGroupIdentifier:groupID].path;
+    __groupContainerPath = path;"""
+
+replacement = """    NSString *path = [fm containerURLForSecurityApplicationGroupIdentifier:groupID].path;
+    if (path == nil) {
+      // Sideload builds carry no App Group entitlement, so the shared container
+      // resolves to nil and every path derived from it disappears. Fall back to
+      // a private directory inside the app sandbox.
+      path = [[self documentsPath] stringByAppendingPathComponent:@"GroupContainer"];
+      [fm createDirectoryAtPath:path withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+    __groupContainerPath = path;"""
+
+if replacement in src:
+    print("  already patched")
+    sys.exit(0)
+
+hits = src.count(needle)
+if hits != 1:
+    sys.exit("Error: expected exactly one match in BlinkPaths.m, found %d" % hits)
+
+open(path, "w", encoding="utf-8").write(src.replace(needle, replacement))
+print("  patched groupContainerPath fallback")
+PY_PATHS
+}
+
 # Function to setup/clone repository
 setup_repository() {
     if [ -d "$SOURCE_DIR" ]; then
@@ -873,6 +915,7 @@ setup_repository() {
             patch_remove_paywall
             patch_skip_migrator
             patch_fileprovider_sideload
+            patch_app_group_container
             create_sideload_entitlements
             return 0
         else
@@ -887,6 +930,7 @@ setup_repository() {
             patch_remove_paywall
             patch_skip_migrator
             patch_fileprovider_sideload
+            patch_app_group_container
             create_sideload_entitlements
             return 0
         fi
@@ -917,6 +961,7 @@ setup_repository() {
     patch_remove_paywall
     patch_skip_migrator
     patch_fileprovider_sideload
+    patch_app_group_container
     create_sideload_entitlements
 }
 
@@ -1190,8 +1235,12 @@ EXPORT_EOF
             echo "Removing incompatible app extensions..."
             rm -rf "$PAYLOAD_DIR/Blink.app/PlugIns"
 
-            # Inject SideloadFix.dylib for App Group and keychain fixes
-            inject_sideload_fix "$PAYLOAD_DIR/Blink.app"
+            # Inject SideloadFix.dylib unless the source patch already covers it
+            if [ "${BLINK_SHIM:-source}" = "none" ]; then
+                echo "Skipping SideloadFix.dylib injection (BLINK_SHIM=none)"
+            else
+                inject_sideload_fix "$PAYLOAD_DIR/Blink.app"
+            fi
 
             # Create .ipa (which is just a zip file)
             cd "$BUILD_DIR"
