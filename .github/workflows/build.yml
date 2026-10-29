@@ -7,6 +7,10 @@ on:
         description: "Blink release tag to build (e.g. v18.4.2)"
         required: true
         default: "v18.4.2"
+      shim:
+        description: "source = compile+inject SideloadFix.dylib, none = source patch only"
+        required: true
+        default: "source"
 
 permissions:
   contents: read
@@ -29,6 +33,7 @@ jobs:
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           TEAM_ID: ""
+          BLINK_SHIM: ${{ inputs.shim }}
         run: |
           chmod +x ./build-blink-shell-gpl.sh
           ./build-blink-shell-gpl.sh --build --version "${{ inputs.version }}"
@@ -43,7 +48,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: blink-unsigned-ipa
+          name: blink-unsigned-ipa-${{ inputs.shim }}
           path: dist/*.ipa
           retention-days: 14
 
