@@ -1,0 +1,59 @@
+name: build-blink-ipa
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Blink release tag to build (e.g. v18.4.2)"
+        required: true
+        default: "v18.4.2"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Toolchain info
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          echo "free disk:"; df -h /
+
+      - name: Build unsigned IPA
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          TEAM_ID: ""
+        run: |
+          chmod +x ./build-blink-shell-gpl.sh
+          ./build-blink-shell-gpl.sh --build --version "${{ inputs.version }}"
+
+      - name: Collect output
+        if: always()
+        run: |
+          ls -la dist/ 2>/dev/null || true
+          ls -la build-output/ 2>/dev/null || true
+
+      - name: Upload IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blink-unsigned-ipa
+          path: dist/*.ipa
+          retention-days: 14
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: |
+            build-output/build.log
+            build-output/**/*.log
+          if-no-files-found: ignore
+          retention-days: 14
