@@ -25,7 +25,13 @@ jobs:
 
       - name: Toolchain info
         run: |
-          sudo xcode-select -s /Applications/Xcode.app
+          XCODE_APP=$(ls -d /Applications/Xcode_26.6.app /Applications/Xcode_26.*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE_APP" ]; then
+            echo "No Xcode 26 image found; available:"; ls /Applications | grep -i xcode || true
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE_APP"
+          echo "Using $XCODE_APP"
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
           echo "free disk:"; df -h /
@@ -35,9 +41,14 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           TEAM_ID: ""
           BLINK_SHIM: ${{ inputs.shim }}
+          BLINK_VERSION: ${{ inputs.version }}
         run: |
+          case "$BLINK_VERSION" in
+            v[0-9]*.[0-9]*) ;;
+            *) echo "invalid version input: $BLINK_VERSION"; exit 1 ;;
+          esac
           chmod +x ./build-blink-shell-gpl.sh
-          ./build-blink-shell-gpl.sh --build --version "${{ inputs.version }}"
+          ./build-blink-shell-gpl.sh --build --version "$BLINK_VERSION"
 
       - name: Collect output
         if: always()
