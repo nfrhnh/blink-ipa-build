@@ -441,7 +441,7 @@ fix_team_id() {
 
     if grep -q "$HARDCODED_TEAM" "$PROJECT_FILE" 2>/dev/null; then
         echo "Fixing hardcoded TEAM_ID in project..."
-        sed -i '' "s/${HARDCODED_TEAM}/\${TEAM_ID}/g" "$PROJECT_FILE"
+        sed -i '' "s/${HARDCODED_TEAM}/\"\$(TEAM_ID)\"/g" "$PROJECT_FILE"
         echo "  Replaced $HARDCODED_TEAM with \${TEAM_ID}"
     fi
 }
